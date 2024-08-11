@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const client = new OpenAI({ apiKey: "sk-gXwQ7SB2WNW8lXy9KCQj0-EhhVr4tHm2x7xYL2uxJdT3BlbkFJ5RZToDp2v6BSNMZuIF4y0fLtqB5trnswbgA1dfEMUA" });
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const UPLOAD_FOLDER = 'uploads';
 
