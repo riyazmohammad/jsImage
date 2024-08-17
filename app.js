@@ -9,11 +9,17 @@ const OpenAI = require('openai');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// CORS configuration
+app.use(cors({
+  origin: '*', // Be more specific in production
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const UPLOAD_FOLDER = 'uploads';
 
 // Configure multer for file upload
@@ -62,14 +68,26 @@ async function convertImageToBase64(imageUrl) {
   }
 }
 
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
 app.post('/upload_image', upload.single('image'), (req, res) => {
+  console.log('Received upload request');
   if (!req.file) {
+    console.error('No file uploaded');
     return res.status(400).json({ error: "No image file uploaded" });
   }
-
   const filepath = req.file.path;
+  console.log(`File saved at: ${filepath}`);
   deleteFileAfterDelay(filepath);
-
   res.json({ file_path: filepath });
 });
 
@@ -78,20 +96,23 @@ app.get('/uploads/:filename', (req, res) => {
 });
 
 app.post('/process_image', async (req, res) => {
+  console.log('Received process request');
   const { image_url } = req.body;
-
   if (!image_url) {
+    console.error('No image URL provided');
     return res.status(400).json({ error: "Image URL is required" });
   }
-
-  const base64ImageString = await convertImageToBase64(image_url);
-  if (!base64ImageString) {
-    return res.status(500).json({ error: "Failed to fetch or encode the image" });
-  }
-
+  
   try {
+    const base64ImageString = await convertImageToBase64(image_url);
+    if (!base64ImageString) {
+      console.error('Failed to convert image to base64');
+      return res.status(500).json({ error: "Failed to fetch or encode the image" });
+    }
+
+    console.log('Sending request to OpenAI');
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4-vision-preview",
       messages: [
         {
           role: "user",
@@ -113,18 +134,21 @@ app.post('/process_image', async (req, res) => {
     });
 
     const content = response.choices[0].message.content;
+    console.log('Received response from OpenAI:', content);
+
     const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
     
     if (jsonMatch) {
       const jsonContent = JSON.parse(jsonMatch[1]);
-      console.log(jsonContent);
+      console.log('Extracted JSON:', jsonContent);
       res.json(jsonContent);
     } else {
+      console.error('Failed to extract JSON from OpenAI response');
       res.status(500).json({ error: "Failed to extract JSON from response" });
     }
   } catch (error) {
     console.error('Error processing image:', error);
-    res.status(500).json({ error: "Error processing image" });
+    res.status(500).json({ error: "Error processing image", details: error.message });
   }
 });
 
